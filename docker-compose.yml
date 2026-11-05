@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: renewals
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d renewals"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: renewals
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      PROVIDER_URL: http://provider:8091
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      ALLOWED_ORIGINS: "http://localhost:5173"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./backend/src
+          target: /app/src
+          ignore:
+            - node_modules/
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3000
+    depends_on:
+      - backend
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+          ignore:
+            - node_modules/
+
+  provider:
+    image: python:3.12-slim
+    volumes:
+      - ./provider_simulator.py:/app/provider_simulator.py:ro
+    command: ["sh", "-c", "sed 's/127.0.0.1/0.0.0.0/' /app/provider_simulator.py | python3"]
+    ports:
+      - "8091:8091"
+
+volumes:
+  postgres_data:
